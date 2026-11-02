@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Staff to Sol-fa</title>
+<style>
+  :root {
+    --paper: #f4f6f7; --card: #ffffff; --ink: #16222e; --muted: #5b6b79;
+    --line: #d5dde3; --accent: #1f6f78; --accent-ink: #ffffff; --danger: #b3261e; --warn: #8a5a00;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #11181f; --card: #18222b; --ink: #e6edf2; --muted: #93a4b3;
+            --line: #2b3a46; --accent: #56b3bd; --accent-ink: #0b1a1d; --danger: #ff8a80; --warn: #f2c26b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+         font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 48px 20px 64px; }
+  h1 { font: 600 2rem/1.15 var(--serif); margin: 0 0 8px; }
+  .lede { color: var(--muted); margin: 0 0 28px; }
+  .sample { font-family: var(--mono); background: var(--card); border: 1px solid var(--line);
+            border-radius: 6px; padding: 12px 14px; margin: 0 0 28px; font-size: .95rem; overflow-x: auto; }
+  .sample small { display: block; color: var(--muted); font-family: inherit; margin-top: 4px; }
+  #drop { display: block; border: 2px dashed var(--line); border-radius: 8px; background: var(--card);
+          padding: 36px 20px; text-align: center; cursor: pointer; }
+  #drop:hover, #drop.over, #drop:focus-within { border-color: var(--accent); }
+  #drop strong { display: block; font-size: 1.05rem; }
+  #drop span { color: var(--muted); font-size: .92rem; }
+  #file { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  fieldset { border: 0; padding: 0; margin: 20px 0; display: flex; gap: 24px; flex-wrap: wrap; }
+  label.opt { display: flex; align-items: center; gap: 8px; font-size: .95rem; }
+  select { font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line);
+           border-radius: 6px; padding: 4px 8px; }
+  button, a.btn { font: inherit; font-weight: 600; background: var(--accent); color: var(--accent-ink);
+                  border: 0; border-radius: 6px; padding: 10px 18px; cursor: pointer; text-decoration: none;
+                  display: inline-block; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button:focus-visible, a.btn:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  #status { margin-top: 24px; min-height: 1.5em; }
+  .err { color: var(--danger); white-space: pre-wrap; }
+  .warn { color: var(--warn); margin: 12px 0 0; padding-left: 18px; }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 10px; }
+  .bar i { display: block; height: 100%; width: 35%; background: var(--accent); animation: slide 1.2s ease-in-out infinite; }
+  @keyframes slide { from { margin-left: -35%; } to { margin-left: 100%; } }
+  @media (prefers-reduced-motion: reduce) { .bar i { animation: none; width: 100%; } }
+  .note { color: var(--muted); font-size: .88rem; margin-top: 36px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Staff notation to tonic sol-fa</h1>
+  <p class="lede">Upload a PDF of printed sheet music and download it as a sol-fa score.</p>
+
+  <p class="sample" aria-hidden="true">| d : r . m : s : - | m : r : d : - ||
+    <small>doh = key note, : beat, . half beat, - held, small number = octave</small></p>
+
+  <label id="drop" for="file">
+    <input id="file" type="file" accept=".pdf,.musicxml,.xml,.mxl,.mid,.midi">
+    <strong id="fname">Choose a PDF, or drop it here</strong>
+    <span>Printed scores work best. Up to <span id="max">25</span> MB.</span>
+  </label>
+
+  <fieldset>
+    <label class="opt"><input type="checkbox" id="lyrics" checked> Include lyrics</label>
+    <label class="opt">Paper
+      <select id="paper"><option value="a4">A4</option><option value="letter">Letter</option></select>
+    </label>
+  </fieldset>
+
+  <button id="go" disabled>Convert</button>
+  <div id="status" role="status" aria-live="polite"></div>
+
+  <p class="note">Music recognition is not perfect. Check the result against your original before rehearsing from it.</p>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const file = $("file"), drop = $("drop"), go = $("go"), statusEl = $("status");
+let chosen = null, timer = null;
+
+function setFile(f) {
+  chosen = f || null;
+  $("fname").textContent = chosen ? chosen.name : "Choose a PDF, or drop it here";
+  go.disabled = !chosen;
+}
+file.addEventListener("change", () => setFile(file.files[0]));
+["dragenter", "dragover"].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", ev => setFile(ev.dataTransfer.files[0]));
+
+function show(node) { statusEl.replaceChildren(node); }
+function text(tag, msg, cls) { const n = document.createElement(tag); n.textContent = msg; if (cls) n.className = cls; return n; }
+
+function working(msg) {
+  const box = document.createElement("div");
+  box.append(text("span", msg));
+  const bar = document.createElement("div"); bar.className = "bar"; bar.append(document.createElement("i"));
+  box.append(bar);
+  show(box);
+}
+
+async function poll(id, name) {
+  try {
+    const r = await fetch(`/api/jobs/${id}`);
+    if (!r.ok) throw new Error("Lost track of this job. Please try again.");
+    const j = await r.json();
+    if (j.status === "done") {
+      go.disabled = false;
+      const box = document.createElement("div");
+      const a = text("a", "Download sol-fa PDF", "btn");
+      a.href = `/api/jobs/${id}/download`;
+      box.append(a);
+      const info = j.info || {};
+      box.append(text("p", `${info.parts} line${info.parts === 1 ? "" : "s"}, ${info.measures} bars.`));
+      if (info.warnings && info.warnings.length) {
+        const ul = document.createElement("ul"); ul.className = "warn";
+        info.warnings.forEach(w => ul.append(text("li", w)));
+        box.append(ul);
+      }
+      show(box);
+    } else if (j.status === "error") {
+      go.disabled = false;
+      show(text("div", j.error || "Conversion failed.", "err"));
+    } else {
+      working(j.status === "queued" ? "Waiting in line..." : "Reading the music. This can take a few minutes.");
+      timer = setTimeout(() => poll(id, name), 2000);
+    }
+  } catch (e) {
+    go.disabled = false;
+    show(text("div", e.message, "err"));
+  }
+}
+
+go.addEventListener("click", async () => {
+  if (!chosen) return;
+  clearTimeout(timer);
+  go.disabled = true;
+  working("Uploading...");
+  const fd = new FormData();
+  fd.append("file", chosen);
+  fd.append("lyrics", $("lyrics").checked ? "1" : "0");
+  fd.append("paper", $("paper").value);
+  try {
+    const r = await fetch("/api/jobs", { method: "POST", body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || (r.status === 413 ? "That file is too large." : "Upload failed."));
+    poll(j.id, chosen.name);
+  } catch (e) {
+    go.disabled = false;
+    show(text("div", e.message, "err"));
+  }
+});
+</script>
+</body>
+</html>
